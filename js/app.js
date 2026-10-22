@@ -74,8 +74,8 @@ window.onload = async () => {
       teamBoxUrl = './data/team_box.csv';
       gamesUrl = './data/games.csv';
     } else {
-      teamBoxUrl = 'https://cdn.jsdelivr.net/gh/mpckkk/2026_DC@main/data/team_box.csv';
-      gamesUrl = 'https://cdn.jsdelivr.net/gh/mpckkk/2026_DC@main/data/games.csv';
+      teamBoxUrl = 'https://media.githubusercontent.com/media/mpckkk/2026_DC/main/data/team_box.csv';
+      gamesUrl = 'https://media.githubusercontent.com/media/mpckkk/2026_DC/main/data/games.csv';
     }
 
     const teamBoxData = await fetchCSV(teamBoxUrl);
