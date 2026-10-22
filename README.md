@@ -4,6 +4,6 @@ An interactive, full stack static data visualization dashboard built for the Big
 
 ## 🚀 Live Demo
 
-![Project Dashboard Preview](BigTenWBBAnalytics.png)
+![Project Dashboard Preview](images/BigTenWBBAnalytics.png)
 
 **[View the Live Dashboard Here](https://mpckkk.github.io/2026_DC/)**
