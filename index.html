@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Big Ten WBB Analytics</title>
+  <!-- Favicon for Browser Tab -->
+  <link rel="icon" type="image/png" href="images/bigten-logo.png" />
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <!-- Custom Logo Image -->
+        <img src="images/bigten-logo.png" alt="Big Ten Logo" class="brand-img">
+        <div>
+          <h1>BIG TEN WBB ANALYTICS</h1>
+          <p>Interactive Dataset Visualizer</p>
+        </div>
+      </div>
+      
+      <!-- Navigation Links -->
+      <div class="nav-links">
+        <a href="#" class="active">Dashboard</a>
+        
+        <a href="https://github.com/mpckkk/2026_DC/tree/main" target="_blank" rel="noopener noreferrer" class="nav-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          GitHub
+        </a>
+
+        <a href="https://btaa.org/technology/love-data-week" target="_blank" rel="noopener noreferrer" class="nav-btn community-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          Community
+        </a>
+
+        <!-- Theme Toggle Button -->
+        <button id="themeToggle" class="nav-btn" style="cursor: pointer;">
+          <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Moon Icon (Default) -->
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <span id="themeText">Dark</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    
+    <!-- Global Filters -->
+    <section class="filter-bar">
+      <div class="filter-group">
+        <label>Date Range</label>
+        <input type="date" id="startDate" class="filter-input">
+        <span style="color:var(--text-muted)">to</span>
+        <input type="date" id="endDate" class="filter-input">
+      </div>
+      <div class="filter-group">
+        <label>Focus Team</label>
+        <select id="teamFilter" class="filter-input">
+          <option value="all">All Teams</option>
+        </select>
+      </div>
+      <button id="resetFilters" class="btn-secondary">Reset</button>
+    </section>
+
+    <!-- KPI Row -->
+    <section class="kpi-grid" id="kpiGrid">
+      <div class="kpi-card">
+        <div class="kpi-header"><span>CONFERENCE TEAMS</span> <div class="icon-box">🏀</div></div>
+        <div class="kpi-value" id="kpiTeams">0 Teams</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header"><span>GAMES ANALYZED</span> <div class="icon-box">📈</div></div>
+        <div class="kpi-value" id="kpiGames">0 Games</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header"><span>LEAGUE AVERAGE PPG</span> <div class="icon-box">📊</div></div>
+        <div class="kpi-value" id="kpiAvgPpg">0.0 PPG</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header"><span>TOP SCORING TEAM</span> <div class="icon-box">🏆</div></div>
+        <div class="kpi-value" id="kpiTopTeam">N/A</div>
+      </div>
+    </section>
+
+    <!-- Charts Row 1 -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h2>📊 Offensive vs. Defensive PPG</h2>
+          <span class="badge">Top 8 by Win %</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="ppgChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>🎯 Efficiency Quadrant</h2>
+          <span class="badge">PPG vs OPP PPG</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="scatterChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts Row 2 -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h2>🕸️ Team Identity Profile</h2>
+          <div class="radar-controls">
+            <select id="radarTeam1" class="filter-input small"></select>
+            <span style="color:var(--text-muted)">vs</span>
+            <select id="radarTeam2" class="filter-input small"></select>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="radarChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>📈 3-Point Field Goal Leaders (%)</h2>
+          <span class="badge">Team Shooting</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="threePtChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts Row 3 -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h2>🏀 Conference Shot Distribution</h2>
+          <span class="badge">Where points come from</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="shotDistChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>⚔️ Ball Security Quadrant</h2>
+          <span class="badge">Assists vs Turnovers</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="ballSecurityChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Charts Row 4 -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h2>💥 Rebounding Dominance</h2>
+          <span class="badge">Total rebounds per game</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="reboundingChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>🔥 Team Efficiency Matrix</h2>
+          <span class="badge">Normalized 0-100 scale</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="efficiencyMatrixChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Game Margin Trend -->
+    <section class="card">
+      <div class="card-header">
+        <h2>📈 Game-by-Game Margin Trend</h2>
+        <p class="card-sub">Point differential for the selected Focus Team (or Top Seed)</p>
+      </div>
+      <div class="chart-container chart-tall">
+        <canvas id="marginTrendChart"></canvas>
+      </div>
+    </section>
+
+    <!-- NEW Charts Row 5 -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h2>🥧 Shot Selection Profile</h2>
+          <span class="badge">Volume of attempts</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="shotAttemptsChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>🏆 Top 10 Biggest Blowouts</h2>
+          <span class="badge">Largest point differentials</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="blowoutsChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEW Charts Row 6 -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h2>📅 Longest Winning Streaks</h2>
+          <span class="badge">Season high consecutive wins</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="streaksChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>⚖️ Home vs. Away Advantage</h2>
+          <span class="badge">Top 3 Teams PPG comparison</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="homeAwayChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Table Section -->
+    <section class="card">
+      <div class="card-header table-header">
+        <div>
+          <h2>Big Ten Conference Standings & Net Metrics</h2>
+          <p class="card-sub">Click column headers to sort</p>
+        </div>
+        <div class="table-actions">
+          <input type="text" id="searchInput" class="search-input" placeholder="Search team...">
+          <button id="exportBtn" class="btn-secondary">Export CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="statsTable">
+          <thead>
+            <tr>
+              <th data-sort="rank">RANK</th>
+              <th data-sort="name">TEAM</th>
+              <th data-sort="wins">W</th>
+              <th data-sort="losses">L</th>
+              <th data-sort="winPct">WIN %</th>
+              <th data-sort="ppg">PPG</th>
+              <th data-sort="oppPpg">OPP PPG</th>
+              <th data-sort="fgPct">FG%</th>
+              <th data-sort="tpPct">3P%</th>
+              <th data-sort="rebPerGame">REB</th>
+              <th data-sort="astPerGame">AST</th>
+              <th data-sort="toPerGame">TO</th>
+              <th data-sort="netRating">NET RTG</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="13" style="text-align:center; padding: 20px;">Loading data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- PAGINATION CONTROLS -->
+      <div class="pagination-container">
+        <div class="page-size-selector">
+          Rows per page: 
+          <select id="rowsPerPage">
+            <option value="10">10</option>
+            <option value="15" selected>15</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+        <div class="pagination-buttons" id="paginationControls">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER SECTION -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-content">
+        <p><strong>Data Source:</strong> Big Ten Women's Basketball dataset provided by the University of Illinois.</p>
+        <p>
+          <a href="https://uofi.app.box.com/s/vhbl9evt5aoqyiduq4pkgehm5on9cuaq" target="_blank" rel="noopener noreferrer" class="footer-link">
+            📦 Access Original Dataset via Box
+          </a>
+        </p>
+      </div>
+      <div class="footer-meta">
+        <p>&copy; 2026 Big Ten WBB Analytics</p>
+        <p>Built for the Data Viz Community</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
