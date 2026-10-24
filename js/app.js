@@ -15,7 +15,7 @@ let rowsPerPage = 15;
 
 const TEAM_COLORS = ["#e63946", "#f5a623", "#2dd4a7", "#5b8cff", "#c1121f", "#18453b", "#4e2a84", "#ceb888", "#990000", "#041e42", "#154733", "#4b2e83", "#ffcd00", "#7a0019", "#d00000", "#cc0033", "#6c757d", "#0dcaf0"];
 
-// Updated Google Sheet CSV Export Link for team_box & fallback link for games
+// Google Sheet CSV Export Link for team_box & fallback link for games
 const DRIVE_TEAM_BOX_LINK = 'https://docs.google.com/spreadsheets/d/12wbxs3Cj6JWS3gwmEHLGQbuj9VsX10xr7BHNUQxONkI/export?format=csv&gid=720107522';
 const DRIVE_GAMES_LINK = 'https://drive.google.com/file/d/1VD_CljffiNtQaTPuX0gCzwZQr9zzw8il/view?usp=drive_link';
 
@@ -93,7 +93,6 @@ window.onload = async () => {
     console.log("2. Fetching CSV files...");
     const teamBoxData = await fetchCSV('./data/team_box.csv', DRIVE_TEAM_BOX_LINK);
     
-    // Try loading games.csv; if it fails, derive games list directly from team_box
     let gamesData = [];
     try {
       gamesData = await fetchCSV('./data/games.csv', DRIVE_GAMES_LINK);
@@ -119,7 +118,6 @@ function initializeAppWithData(teamBoxData, gamesData) {
   }
 
   console.log("3. Data loaded! Team Box Rows:", teamBoxData.length, "Games Rows:", gamesData.length);
-  // ... rest of your code ...
   
   rawTeamBox = teamBoxData;
   rawGames = gamesData && gamesData.length > 0 ? gamesData : deriveGamesFromTeamBox(teamBoxData);
@@ -277,17 +275,14 @@ async function fetchCSV(localPath, remoteLink) {
 
   const candidateUrls = [];
 
-  // 1. Try local relative file first if running on a web server (http/https)
   if (window.location.protocol.startsWith('http')) {
     candidateUrls.push(localPath);
   }
 
-  // 2. Direct fetch for Google Sheets CSV export links (supports CORS natively when shared as "Anyone with link")
   if (isSpreadsheet) {
     candidateUrls.push(directRemoteUrl);
   }
 
-  // 3. Proxy fallbacks in case of redirects or strict browser tracking prevention
   candidateUrls.push(
     `https://corsproxy.io/?url=${encodeURIComponent(directRemoteUrl)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(altDriveUrl)}`,
@@ -322,11 +317,10 @@ async function fetchCSV(localPath, remoteLink) {
   throw new Error(lastError ? lastError.message : 'Load failed');
 }
 
-// Interactive fallback if the user opened index.html via file:// or the Sheet is still private
 function renderFallbackUploader(errorMsg) {
   const loader = document.getElementById('pageLoader');
   if (loader) loader.remove();
-  
+
   const tbody = document.getElementById("tableBody");
   if (!tbody) return;
 
