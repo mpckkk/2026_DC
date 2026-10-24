@@ -15,8 +15,8 @@ let rowsPerPage = 15;
 
 const TEAM_COLORS = ["#e63946", "#f5a623", "#2dd4a7", "#5b8cff", "#c1121f", "#18453b", "#4e2a84", "#ceb888", "#990000", "#041e42", "#154733", "#4b2e83", "#ffcd00", "#7a0019", "#d00000", "#cc0033", "#6c757d", "#0dcaf0"];
 
-// Google Sheet CSV Export Link for team_box
-const DRIVE_TEAM_BOX_LINK = 'https://docs.google.com/spreadsheets/d/12wbxs3Cj6JWS3gwmEHLGQbuj9VsX10xr7BHNUQxONkI/export?format=csv&gid=720107522';
+// Updated Google Sheet Link for team_box
+const DRIVE_TEAM_BOX_LINK = 'https://docs.google.com/spreadsheets/d/1tpwA92enAc-xojEo74GhRZjd50i9ZNXI7PUypjJ01eg/edit?gid=507312218#gid=507312218';
 
 function hidePageLoader() {
   const loader = document.getElementById('pageLoader');
@@ -29,8 +29,8 @@ function hidePageLoader() {
   }
 }
 
-// Safety fallback: never let the loader block the screen for more than 8 seconds
-setTimeout(hidePageLoader, 8000);
+// Safety fallback: hide loader after 25 seconds if network is extremely slow
+setTimeout(hidePageLoader, 25000);
 
 function extractDriveId(shareUrl) {
   const match = shareUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -90,7 +90,7 @@ function updateChartThemeColors() {
   });
 }
 
-// Build gamesData directly from teamBoxData so we don't wait on a second slow CSV
+// Build gamesData directly from teamBoxData so we don't wait on a second CSV
 function deriveGamesFromTeamBox(teamBoxData) {
   const seenGames = new Map();
   teamBoxData.forEach(row => {
@@ -267,8 +267,8 @@ function parseCSVText(text) {
   });
 }
 
-// Fetch with timeout so slow proxies never hang the loading screen
-async function fetchWithTimeout(url, timeoutMs = 4500) {
+// 25-second timeout so large Google Sheets CSV exports have plenty of time to finish downloading
+async function fetchWithTimeout(url, timeoutMs = 25000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -284,40 +284,42 @@ async function fetchWithTimeout(url, timeoutMs = 4500) {
 async function fetchCSV(localPath, remoteLink) {
   const isSpreadsheet = remoteLink.includes('docs.google.com/spreadsheets');
   const driveId = extractDriveId(remoteLink);
-
-  let directRemoteUrl = remoteLink;
-  if (isSpreadsheet) {
-    const gidMatch = remoteLink.match(/gid=([0-9]+)/);
-    const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : '';
-    directRemoteUrl = driveId
-      ? `https://docs.google.com/spreadsheets/d/${driveId}/export?format=csv${gidParam}`
-      : remoteLink;
-  }
+  const gidMatch = remoteLink.match(/gid=([0-9]+)/);
+  const gid = gidMatch ? gidMatch[1] : '0';
 
   const candidateUrls = [];
 
-  // 1. Direct Google Sheet CSV export first (fastest & supports CORS natively)
-  if (isSpreadsheet) {
-    candidateUrls.push(directRemoteUrl);
-  }
+  if (isSpreadsheet && driveId) {
+    // 1. Google Visualization CSV endpoint (Fastest & native CORS support)
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${driveId}/gviz/tq?tqx=out:csv&gid=${gid}`;
+    // 2. Standard Google Sheets CSV Export endpoint
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${driveId}/export?format=csv&gid=${gid}`;
 
-  // 2. Local path if running on http/https
-  if (window.location.protocol.startsWith('http')) {
-    candidateUrls.push(localPath);
-  }
+    candidateUrls.push(gvizUrl, exportUrl);
 
-  // 3. Fast CORS proxy fallback
-  candidateUrls.push(
-    `https://corsproxy.io/?url=${encodeURIComponent(directRemoteUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(directRemoteUrl)}`
-  );
+    // 3. Local file if hosted on http/https
+    if (window.location.protocol.startsWith('http')) {
+      candidateUrls.push(localPath);
+    }
+
+    // 4. Proxy fallbacks
+    candidateUrls.push(
+      `https://corsproxy.io/?url=${encodeURIComponent(exportUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(exportUrl)}`
+    );
+  } else {
+    if (window.location.protocol.startsWith('http')) {
+      candidateUrls.push(localPath);
+    }
+    candidateUrls.push(remoteLink);
+  }
 
   let lastError = null;
 
   for (const url of candidateUrls) {
     try {
       console.log(`Trying: ${url}`);
-      const response = await fetchWithTimeout(url, 4500);
+      const response = await fetchWithTimeout(url, 25000);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const text = await response.text();
@@ -440,7 +442,6 @@ function updateDashboard() {
     renderStreaksChart();
     renderHomeAwayChart();
   } else {
-    // Clear all charts cleanly if no games match the filter criteria
     Object.keys(charts).forEach(key => {
       if (charts[key]) {
         charts[key].destroy();
@@ -1071,7 +1072,6 @@ function renderHomeAwayChart() {
   const canvas = document.getElementById('homeAwayChart');
   if (!canvas) return;
 
-  // Slice Top 3 teams to match the HTML badge ("Top 3 Teams PPG comparison")
   const topTeams = [...processedTeams].sort((a, b) => b.winPct - a.winPct).slice(0, 3);
 
   const getTeamHomeAwayStats = (teamId) => {
