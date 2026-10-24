@@ -30,7 +30,7 @@ function hidePageLoader() {
 }
 
 // Safety fallback: hide loader after 25 seconds if network is extremely slow
-setTimeout(hidePageLoader, 25000);
+setTimeout(hidePageLoader, 2500000);
 
 function extractDriveId(shareUrl) {
   const match = shareUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
