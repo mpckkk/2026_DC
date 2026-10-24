@@ -81,53 +81,13 @@ function deriveGamesFromTeamBox(teamBoxData) {
   return Array.from(seenGames.values());
 }
 
-// Updated progress function that forces the browser to paint the visual update
-function updateLoaderProgress(percent, message) {
-  return new Promise(resolve => {
-    requestAnimationFrame(() => {
-      const fill = document.getElementById('progressFill');
-      const pct = document.getElementById('progressPct');
-      const msg = document.getElementById('loaderMessage');
-      if (fill) fill.style.width = `${percent}%`;
-      if (pct) pct.innerText = `${percent}%`;
-      if (msg && message) msg.innerText = message;
-      // Brief pause to let the browser render the animation frame
-      setTimeout(resolve, 50);
-    });
-  });
-}
 window.onload = async () => {
   console.log("1. Window Loaded. Starting app...");
-  await updateLoaderProgress(10, "Initializing application...");
   
   if (typeof Papa === 'undefined' || typeof Chart === 'undefined') {
     alert("Error: Chart.js or PapaParse failed to load. Check your internet connection.");
     return;
   }
-
-  try {
-    await updateLoaderProgress(30, "Downloading team_box dataset...");
-    const teamBoxData = await fetchCSV('./data/team_box.csv', DRIVE_TEAM_BOX_LINK);
-    
-    await updateLoaderProgress(60, "Processing game schedules...");
-    let gamesData = [];
-    try {
-      gamesData = await fetchCSV('./data/games.csv', DRIVE_GAMES_LINK);
-    } catch (gamesErr) {
-      console.warn("games.csv unavailable, deriving games list from team_box...");
-      gamesData = deriveGamesFromTeamBox(teamBoxData);
-    }
-    
-    await updateLoaderProgress(85, "Calculating team statistics & net ratings...");
-    initializeAppWithData(teamBoxData, gamesData);
-    
-    await updateLoaderProgress(100, "Ready!");
-
-  } catch (error) {
-    console.error("CRITICAL ERROR:", error);
-    renderFallbackUploader(error.message);
-  }
-};
 
   try {
     console.log("2. Fetching CSV files...");
