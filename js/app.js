@@ -15,6 +15,15 @@ let rowsPerPage = 15;
 
 const TEAM_COLORS = ["#e63946", "#f5a623", "#2dd4a7", "#5b8cff", "#c1121f", "#18453b", "#4e2a84", "#ceb888", "#990000", "#041e42", "#154733", "#4b2e83", "#ffcd00", "#7a0019", "#d00000", "#cc0033", "#6c757d", "#0dcaf0"];
 
+function updateLoaderProgress(percent, message) {
+  const fill = document.getElementById('progressFill');
+  const pct = document.getElementById('progressPct');
+  const msg = document.getElementById('loaderMessage');
+  if (fill) fill.style.width = `${percent}%`;
+  if (pct) pct.innerText = `${percent}%`;
+  if (msg && message) msg.innerText = message;
+}
+
 // Updated Google Sheet CSV Export Link for team_box & fallback link for games
 const DRIVE_TEAM_BOX_LINK = 'https://docs.google.com/spreadsheets/d/12wbxs3Cj6JWS3gwmEHLGQbuj9VsX10xr7BHNUQxONkI/export?format=csv&gid=720107522';
 const DRIVE_GAMES_LINK = 'https://drive.google.com/file/d/1VD_CljffiNtQaTPuX0gCzwZQr9zzw8il/view?usp=drive_link';
@@ -83,11 +92,36 @@ function deriveGamesFromTeamBox(teamBoxData) {
 
 window.onload = async () => {
   console.log("1. Window Loaded. Starting app...");
+  updateLoaderProgress(10, "Initializing application...");
   
   if (typeof Papa === 'undefined' || typeof Chart === 'undefined') {
     alert("Error: Chart.js or PapaParse failed to load. Check your internet connection.");
     return;
   }
+
+  try {
+    updateLoaderProgress(30, "Downloading team_box dataset...");
+    const teamBoxData = await fetchCSV('./data/team_box.csv', DRIVE_TEAM_BOX_LINK);
+    
+    updateLoaderProgress(60, "Processing game schedules...");
+    let gamesData = [];
+    try {
+      gamesData = await fetchCSV('./data/games.csv', DRIVE_GAMES_LINK);
+    } catch (gamesErr) {
+      console.warn("games.csv unavailable, deriving games list from team_box...");
+      gamesData = deriveGamesFromTeamBox(teamBoxData);
+    }
+    
+    updateLoaderProgress(85, "Calculating team statistics & net ratings...");
+    initializeAppWithData(teamBoxData, gamesData);
+    
+    updateLoaderProgress(100, "Ready!");
+
+  } catch (error) {
+    console.error("CRITICAL ERROR:", error);
+    renderFallbackUploader(error.message);
+  }
+};
 
   try {
     console.log("2. Fetching CSV files...");
