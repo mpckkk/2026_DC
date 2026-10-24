@@ -1,6 +1,7 @@
 // Global State
 let rawTeamBox = [];
 let rawGames = [];
+let filteredTeamBox = [];
 let processedTeams = [];
 let currentSort = { col: 'winPct', dir: 'desc' };
 let currentSearch = "";
@@ -13,6 +14,17 @@ let currentPage = 1;
 let rowsPerPage = 15;
 
 const TEAM_COLORS = ["#e63946", "#f5a623", "#2dd4a7", "#5b8cff", "#c1121f", "#18453b", "#4e2a84", "#ceb888", "#990000", "#041e42", "#154733", "#4b2e83", "#ffcd00", "#7a0019", "#d00000", "#cc0033", "#6c757d", "#0dcaf0"];
+
+// Google Drive Share Links
+const DRIVE_TEAM_BOX_LINK = 'https://drive.google.com/file/d/1oX04GZ8VVpRt2Vu8mOyB4evcOiJcQVsL/view?usp=drive_link';
+const DRIVE_GAMES_LINK = 'https://drive.google.com/file/d/1VD_CljffiNtQaTPuX0gCzwZQr9zzw8il/view?usp=drive_link';
+
+// Helper to convert Google Drive /view links into direct download URLs
+function getDriveDownloadUrl(shareUrl) {
+  const match = shareUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const id = match ? match[1] : shareUrl;
+  return `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+}
 
 // THEME TOGGLE LOGIC
 document.addEventListener('DOMContentLoaded', () => {
@@ -58,7 +70,7 @@ function updateChartThemeColors() {
   });
 }
 
-// Use window.onload instead of DOMContentLoaded to ensure ALL elements are ready
+// Use window.onload to ensure ALL elements and external scripts are ready
 window.onload = async () => {
   console.log("1. Window Loaded. Starting app...");
   
@@ -69,17 +81,10 @@ window.onload = async () => {
 
   try {
     console.log("2. Fetching CSV files...");
-    let teamBoxUrl, gamesUrl;
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      teamBoxUrl = './data/team_box.csv';
-      gamesUrl = './data/games.csv';
-    } else {
-      teamBoxUrl = 'https://drive.usercontent.google.com/download?id=1oX04GZ8VVpRt2Vu8mOyB4evcOiJcQVsL&export=download&authuser=0';
-      gamesUrl = 'https://drive.usercontent.google.com/download?id=1VD_CljffiNtQaTPuX0gCzwZQr9zzw8il&export=download&confirm=t'; 
-    }
-
-    const teamBoxData = await fetchCSV(teamBoxUrl);
-    const gamesData = await fetchCSV(gamesUrl);
+    const [teamBoxData, gamesData] = await Promise.all([
+      fetchCSV('./data/team_box.csv', DRIVE_TEAM_BOX_LINK),
+      fetchCSV('./data/games.csv', DRIVE_GAMES_LINK)
+    ]);
     
     console.log("3. Data fetched! Team Box Rows:", teamBoxData.length, "Games Rows:", gamesData.length);
     
@@ -210,28 +215,82 @@ window.onload = async () => {
   }
 };
 
-async function fetchCSV(url) {
-  console.log(`Fetching ${url}...`);
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}: Could not find ${url}`);
-  const text = await response.text();
-  
-  if (text.startsWith('version https://git-lfs.github.com/spec')) {
-    throw new Error(`The file ${url} is a Git LFS pointer, not a real CSV.`);
+// Multi-fallback CSV fetcher (Tries local file first, then CORS-proxied Google Drive URLs)
+async function fetchCSV(localPath, driveShareLink) {
+  const directDriveUrl = getDriveDownloadUrl(driveShareLink);
+  const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+  // Build candidate URLs in priority order
+  const candidateUrls = isLocalServer
+    ? [
+        localPath,
+        `https://corsproxy.io/?${encodeURIComponent(directDriveUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(directDriveUrl)}`
+      ]
+    : [
+        localPath, // Works on Vercel/GitHub Pages if ./data/*.csv is committed in the repo
+        `https://corsproxy.io/?${encodeURIComponent(directDriveUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(directDriveUrl)}`
+      ];
+
+  let lastError = null;
+
+  for (const url of candidateUrls) {
+    try {
+      console.log(`Attempting to fetch CSV from: ${url}`);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      let text = await response.text();
+
+      // Check 1: Reject Git LFS pointer files
+      if (text.startsWith('version https://git-lfs.github.com/spec')) {
+        throw new Error(`Local file is a Git LFS pointer, falling back to Google Drive...`);
+      }
+
+      // Check 2: Handle Google Drive large-file virus scan warning or HTML login walls
+      if (text.trim().toLowerCase().startsWith('<!doctype html') || text.trim().toLowerCase().startsWith('<html')) {
+        const uuidMatch = text.match(/name="uuid"\s+value="([^"]+)"/);
+        if (uuidMatch) {
+          const confirmedUrl = `${directDriveUrl}&uuid=${uuidMatch[1]}`;
+          const proxyConfirmedUrl = `https://corsproxy.io/?${encodeURIComponent(confirmedUrl)}`;
+          const retryRes = await fetch(proxyConfirmedUrl);
+          if (!retryRes.ok) throw new Error(`HTTP ${retryRes.status} on confirmed Drive download`);
+          text = await retryRes.text();
+        } else {
+          throw new Error(`Received HTML instead of CSV (Check that Google Drive file access is set to "Anyone with the link")`);
+        }
+      }
+
+      // Final validation: ensure response isn't still HTML
+      if (text.trim().toLowerCase().startsWith('<!doctype html') || text.trim().toLowerCase().startsWith('<html')) {
+        throw new Error(`Google Drive returned an HTML page instead of raw CSV data.`);
+      }
+
+      return await new Promise((resolve, reject) => {
+        Papa.parse(text, { 
+          header: true, 
+          skipEmptyLines: true, 
+          dynamicTyping: true,
+          transformHeader: h => h.trim(),
+          complete: (results) => {
+            const validRows = results.data.filter(row => row && typeof row === 'object' && Object.keys(row).length > 1);
+            if (validRows.length === 0) {
+              reject(new Error("Parsed CSV contained 0 valid rows."));
+            } else {
+              resolve(validRows);
+            }
+          }, 
+          error: reject 
+        });
+      });
+    } catch (err) {
+      console.warn(`Fetch attempt failed for ${url}:`, err.message);
+      lastError = err;
+    }
   }
-  
-  return new Promise((resolve, reject) => {
-    Papa.parse(text, { 
-      header: true, 
-      skipEmptyLines: true, 
-      dynamicTyping: true,
-      transformHeader: h => h.trim(),
-      complete: (results) => {
-        resolve(results.data.filter(row => row && typeof row === 'object' && Object.keys(row).length > 0));
-      }, 
-      error: reject 
-    });
-  });
+
+  throw new Error(`Could not load data from local folder or Google Drive (${lastError ? lastError.message : 'Load failed'}).`);
 }
 
 function updateDashboard() {
@@ -254,6 +313,7 @@ function updateDashboard() {
     filteredBox = filteredBox.filter(b => String(b.team_id) === String(teamFilter) || String(b.opponent_team_id) === String(teamFilter));
   }
 
+  filteredTeamBox = filteredBox;
   processedTeams = aggregateStats(filteredBox);
   renderKPIs(processedTeams, filteredGames.length);
   renderTable();
@@ -528,8 +588,8 @@ function renderRadarChart() {
   const team1Id = document.getElementById('radarTeam1') ? document.getElementById('radarTeam1').value : null;
   const team2Id = document.getElementById('radarTeam2') ? document.getElementById('radarTeam2').value : null;
   
-  const t1 = processedTeams.find(t => t.id == team1Id);
-  const t2 = processedTeams.find(t => t.id == team2Id);
+  const t1 = processedTeams.find(t => String(t.id) === String(team1Id));
+  const t2 = processedTeams.find(t => String(t.id) === String(team2Id));
   if (!t1 || !t2) return;
 
   const maxPpg = Math.max(...processedTeams.map(t => t.ppg)) || 1;
@@ -680,8 +740,8 @@ function renderEfficiencyMatrix() {
   const canvas = document.getElementById('efficiencyMatrixChart');
   if (!canvas) return;
 
-  const maxPpg = Math.max(...processedTeams.map(t => t.ppg));
-  const maxOppPpg = Math.max(...processedTeams.map(t => t.oppPpg));
+  const maxPpg = Math.max(...processedTeams.map(t => t.ppg)) || 1;
+  const maxOppPpg = Math.max(...processedTeams.map(t => t.oppPpg)) || 1;
   const maxFg = 60, maxReb = 45;
 
   charts.efficiencyMatrix = new Chart(canvas, {
@@ -724,12 +784,12 @@ function renderMarginTrendChart() {
 
   const targetTeamName = processedTeams.find(t => String(t.id) === String(targetTeamId))?.name || 'Team';
 
-  const teamGames = rawTeamBox
+  const teamGames = filteredTeamBox
     .filter(b => String(b.team_id) === String(targetTeamId))
     .map(b => ({
       date: b.game_date || b.game_date_time,
       margin: (Number(b.team_score) || 0) - (Number(b.opponent_team_score) || 0),
-      isWin: b.team_winner === true || String(b.team_winner).toLowerCase() === 'true'
+      isWin: b.team_winner === true || String(b.team_winner).toLowerCase() === 'true' || b.team_winner === 1 || b.team_winner === "1"
     }))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -826,7 +886,7 @@ function renderBlowoutsChart() {
   const canvas = document.getElementById('blowoutsChart');
   if (!canvas) return;
 
-  const blowouts = rawTeamBox
+  const blowouts = filteredTeamBox
     .map(b => {
       const score = Number(b.team_score) || 0;
       const oppScore = Number(b.opponent_team_score) || 0;
@@ -877,7 +937,7 @@ function renderBlowoutsChart() {
             label: (c) => {
               const game = blowouts[c.dataIndex];
               if (c.datasetIndex === 0) return `Winner: ${game.score}`;
-              return `Loser: ${game.oppScore} (Margin: ${game.margin})`;
+              return `Loser: ${game.oppScore} (Margin: +${game.margin})`;
             }
           }
         }
@@ -897,7 +957,7 @@ function renderStreaksChart() {
   if (!canvas) return;
 
   const teamStreaks = processedTeams.map(team => {
-    const games = rawTeamBox
+    const games = filteredTeamBox
       .filter(b => String(b.team_id) === String(team.id))
       .sort((a, b) => new Date(a.game_date || a.game_date_time) - new Date(b.game_date || b.game_date_time));
     
@@ -948,12 +1008,12 @@ function renderHomeAwayChart() {
   const canvas = document.getElementById('homeAwayChart');
   if (!canvas) return;
 
-  const topTeams = [...processedTeams].sort((a, b) => b.winPct - a.winPct).slice(0, 3);
+  const topTeams = [...processedTeams].sort((a, b) => b.winPct - a.winPct).slice(0, 5);
 
   const getTeamHomeAwayStats = (teamId) => {
     let homePts = 0, homeGames = 0, awayPts = 0, awayGames = 0;
     
-    rawTeamBox.filter(b => String(b.team_id) === String(teamId)).forEach(g => {
+    filteredTeamBox.filter(b => String(b.team_id) === String(teamId)).forEach(g => {
       const location = String(g.team_home_away || g.home_away || '').toLowerCase().trim();
       const pts = Number(g.team_score) || 0;
       
@@ -972,38 +1032,48 @@ function renderHomeAwayChart() {
     };
   };
 
-  const datasets = topTeams.map(team => {
-    const stats = getTeamHomeAwayStats(team.id);
-    return {
-      label: team.name.split(' ')[0],
-      data: [stats.homePPG, stats.awayPPG],
-      backgroundColor: team.color + '80',
-      borderColor: team.color,
-      borderWidth: 2,
-      pointBackgroundColor: team.color,
-      pointRadius: 4
-    };
-  });
+  const statsList = topTeams.map(t => ({
+    name: t.name.split(' ')[0],
+    ...getTeamHomeAwayStats(t.id)
+  }));
 
   charts.homeAway = new Chart(canvas, {
-    type: 'radar',
+    type: 'bar',
     data: {
-      labels: ['Home PPG', 'Away PPG'],
-      datasets: datasets
+      labels: statsList.map(s => s.name),
+      datasets: [
+        {
+          label: 'Home PPG',
+          data: statsList.map(s => s.homePPG),
+          backgroundColor: '#2dd4a7',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.5
+        },
+        {
+          label: 'Away PPG',
+          data: statsList.map(s => s.awayPPG),
+          backgroundColor: '#5b8cff',
+          borderRadius: 4,
+          barPercentage: 0.6,
+          categoryPercentage: 0.5
+        }
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } } },
-      scales: {
-        r: { 
-          angleLines: { color: 'rgba(255,255,255,0.1)' }, 
-          grid: { color: 'rgba(255,255,255,0.1)' }, 
-          pointLabels: { color: '#e8edf5', font: { size: 12, weight: 'bold' } }, 
-          ticks: { display: false },
-          min: 40, 
-          max: 100 
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, usePointStyle: true, pointStyle: 'rect' } },
+        tooltip: {
+          callbacks: {
+            label: (c) => `${c.dataset.label}: ${c.raw.toFixed(1)} PPG`
+          }
         }
+      },
+      scales: {
+        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.05)' } },
+        x: { grid: { display: false } }
       }
     }
   });
@@ -1023,7 +1093,7 @@ function exportToCSV() {
 
   const headers = ["Rank", "Team", "W", "L", "Win %", "PPG", "OPP PPG", "FG%", "3P%", "REB", "AST", "TO", "Net Rating"];
   const csvRows = filtered.map((t, i) => [
-    i + 1, t.name, t.wins, t.losses, (t.winPct * 100).toFixed(1) + "%", 
+    i + 1, `"${t.name}"`, t.wins, t.losses, (t.winPct * 100).toFixed(1) + "%", 
     t.ppg.toFixed(1), t.oppPpg.toFixed(1), t.fgPct.toFixed(1) + "%", t.tpPct.toFixed(1) + "%",
     t.rebPerGame.toFixed(1), t.astPerGame.toFixed(1), t.toPerGame.toFixed(1), t.netRating.toFixed(1)
   ]);
