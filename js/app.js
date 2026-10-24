@@ -111,7 +111,15 @@ window.onload = async () => {
 };
 
 function initializeAppWithData(teamBoxData, gamesData) {
+  // Hide full page loader smoothly
+  const loader = document.getElementById('pageLoader');
+  if (loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => loader.remove(), 400);
+  }
+
   console.log("3. Data loaded! Team Box Rows:", teamBoxData.length, "Games Rows:", gamesData.length);
+  // ... rest of your code ...
   
   rawTeamBox = teamBoxData;
   rawGames = gamesData && gamesData.length > 0 ? gamesData : deriveGamesFromTeamBox(teamBoxData);
