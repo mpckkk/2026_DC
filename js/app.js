@@ -15,9 +15,22 @@ let rowsPerPage = 15;
 
 const TEAM_COLORS = ["#e63946", "#f5a623", "#2dd4a7", "#5b8cff", "#c1121f", "#18453b", "#4e2a84", "#ceb888", "#990000", "#041e42", "#154733", "#4b2e83", "#ffcd00", "#7a0019", "#d00000", "#cc0033", "#6c757d", "#0dcaf0"];
 
-// Updated Google Sheet CSV Export Link for team_box & fallback link for games
+// Google Sheet CSV Export Link for team_box
 const DRIVE_TEAM_BOX_LINK = 'https://docs.google.com/spreadsheets/d/12wbxs3Cj6JWS3gwmEHLGQbuj9VsX10xr7BHNUQxONkI/export?format=csv&gid=720107522';
-const DRIVE_GAMES_LINK = 'https://drive.google.com/file/d/1VD_CljffiNtQaTPuX0gCzwZQr9zzw8il/view?usp=drive_link';
+
+function hidePageLoader() {
+  const loader = document.getElementById('pageLoader');
+  if (loader) {
+    loader.style.opacity = '0';
+    loader.style.visibility = 'hidden';
+    setTimeout(() => {
+      if (loader.parentNode) loader.remove();
+    }, 400);
+  }
+}
+
+// Safety fallback: never let the loader block the screen for more than 8 seconds
+setTimeout(hidePageLoader, 8000);
 
 function extractDriveId(shareUrl) {
   const match = shareUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -66,7 +79,7 @@ function updateChartThemeColors() {
   });
 }
 
-// Helper to build gamesData directly from teamBoxData if games.csv is unavailable
+// Build gamesData directly from teamBoxData so we don't wait on a second slow CSV
 function deriveGamesFromTeamBox(teamBoxData) {
   const seenGames = new Map();
   teamBoxData.forEach(row => {
@@ -81,26 +94,19 @@ function deriveGamesFromTeamBox(teamBoxData) {
   return Array.from(seenGames.values());
 }
 
-window.onload = async () => {
+window.addEventListener('load', async () => {
   console.log("1. Window Loaded. Starting app...");
   
   if (typeof Papa === 'undefined' || typeof Chart === 'undefined') {
+    hidePageLoader();
     alert("Error: Chart.js or PapaParse failed to load. Check your internet connection.");
     return;
   }
 
   try {
-    console.log("2. Fetching CSV files...");
+    console.log("2. Fetching team_box data...");
     const teamBoxData = await fetchCSV('./data/team_box.csv', DRIVE_TEAM_BOX_LINK);
-    
-    // Try loading games.csv; if it fails, derive games list directly from team_box
-    let gamesData = [];
-    try {
-      gamesData = await fetchCSV('./data/games.csv', DRIVE_GAMES_LINK);
-    } catch (gamesErr) {
-      console.warn("games.csv unavailable, deriving games list directly from team_box...", gamesErr.message);
-      gamesData = deriveGamesFromTeamBox(teamBoxData);
-    }
+    const gamesData = deriveGamesFromTeamBox(teamBoxData);
     
     initializeAppWithData(teamBoxData, gamesData);
 
@@ -108,9 +114,11 @@ window.onload = async () => {
     console.error("CRITICAL ERROR:", error);
     renderFallbackUploader(error.message);
   }
-};
+});
 
 function initializeAppWithData(teamBoxData, gamesData) {
+  hidePageLoader();
+
   console.log("3. Data loaded! Team Box Rows:", teamBoxData.length, "Games Rows:", gamesData.length);
   
   rawTeamBox = teamBoxData;
@@ -248,6 +256,20 @@ function parseCSVText(text) {
   });
 }
 
+// Fetch with timeout so slow proxies never hang the loading screen
+async function fetchWithTimeout(url, timeoutMs = 4500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return response;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 async function fetchCSV(localPath, remoteLink) {
   const isSpreadsheet = remoteLink.includes('docs.google.com/spreadsheets');
   const driveId = extractDriveId(remoteLink);
@@ -259,31 +281,24 @@ async function fetchCSV(localPath, remoteLink) {
     directRemoteUrl = driveId
       ? `https://docs.google.com/spreadsheets/d/${driveId}/export?format=csv${gidParam}`
       : remoteLink;
-  } else if (driveId) {
-    directRemoteUrl = `https://drive.usercontent.google.com/download?id=${driveId}&export=download&confirm=t`;
   }
-
-  const altDriveUrl = (!isSpreadsheet && driveId)
-    ? `https://drive.google.com/uc?export=download&id=${driveId}`
-    : directRemoteUrl;
 
   const candidateUrls = [];
 
-  // 1. Try local relative file first if running on a web server (http/https)
-  if (window.location.protocol.startsWith('http')) {
-    candidateUrls.push(localPath);
-  }
-
-  // 2. Direct fetch for Google Sheets CSV export links (supports CORS natively when shared as "Anyone with link")
+  // 1. Direct Google Sheet CSV export first (fastest & supports CORS natively)
   if (isSpreadsheet) {
     candidateUrls.push(directRemoteUrl);
   }
 
-  // 3. Proxy fallbacks in case of redirects or strict browser tracking prevention
+  // 2. Local path if running on http/https
+  if (window.location.protocol.startsWith('http')) {
+    candidateUrls.push(localPath);
+  }
+
+  // 3. Fast CORS proxy fallback
   candidateUrls.push(
     `https://corsproxy.io/?url=${encodeURIComponent(directRemoteUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(altDriveUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(altDriveUrl)}`
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(directRemoteUrl)}`
   );
 
   let lastError = null;
@@ -291,7 +306,7 @@ async function fetchCSV(localPath, remoteLink) {
   for (const url of candidateUrls) {
     try {
       console.log(`Trying: ${url}`);
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url, 4500);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const text = await response.text();
@@ -301,7 +316,7 @@ async function fetchCSV(localPath, remoteLink) {
         throw new Error('Git LFS pointer detected');
       }
       if (trimmed.toLowerCase().startsWith('<!doctype html') || trimmed.toLowerCase().startsWith('<html')) {
-        throw new Error('Received HTML login page instead of CSV (Ensure Google Sheet is shared as "Anyone with the link")');
+        throw new Error('Google Sheet is private (Set Share -> Anyone with the link)');
       }
 
       return await parseCSVText(text);
@@ -314,8 +329,9 @@ async function fetchCSV(localPath, remoteLink) {
   throw new Error(lastError ? lastError.message : 'Load failed');
 }
 
-// Interactive fallback if the user opened index.html via file:// or the Sheet is still private
 function renderFallbackUploader(errorMsg) {
+  hidePageLoader();
+
   const tbody = document.getElementById("tableBody");
   if (!tbody) return;
 
@@ -333,10 +349,6 @@ function renderFallbackUploader(errorMsg) {
             <strong>1. team_box.csv (Required):</strong><br>
             <input type="file" id="manualTeamBox" accept=".csv" style="margin-top: 4px;">
           </label>
-          <label style="font-size: 0.85rem; text-align: left;">
-            <strong>2. games.csv (Optional):</strong><br>
-            <input type="file" id="manualGames" accept=".csv" style="margin-top: 4px;">
-          </label>
           <button id="manualLoadBtn" style="padding: 8px 16px; background: #5b8cff; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
             Load Dashboard
           </button>
@@ -348,7 +360,6 @@ function renderFallbackUploader(errorMsg) {
   if (loadBtn) {
     loadBtn.addEventListener('click', async () => {
       const boxFile = document.getElementById('manualTeamBox')?.files[0];
-      const gamesFile = document.getElementById('manualGames')?.files[0];
       if (!boxFile) {
         alert("Please select team_box.csv first.");
         return;
@@ -356,13 +367,7 @@ function renderFallbackUploader(errorMsg) {
       try {
         const boxText = await boxFile.text();
         const boxData = await parseCSVText(boxText);
-        let gamesData = [];
-        if (gamesFile) {
-          const gamesText = await gamesFile.text();
-          gamesData = await parseCSVText(gamesText);
-        } else {
-          gamesData = deriveGamesFromTeamBox(boxData);
-        }
+        const gamesData = deriveGamesFromTeamBox(boxData);
         initializeAppWithData(boxData, gamesData);
       } catch (e) {
         alert("Error parsing selected CSV file: " + e.message);
