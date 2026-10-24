@@ -319,7 +319,7 @@ async function fetchCSV(localPath, remoteLink) {
   for (const url of candidateUrls) {
     try {
       console.log(`Trying: ${url}`);
-      const response = await fetchWithTimeout(url, 25000);
+      const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const text = await response.text();
