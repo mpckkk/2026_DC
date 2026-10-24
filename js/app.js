@@ -324,6 +324,9 @@ async function fetchCSV(localPath, remoteLink) {
 
 // Interactive fallback if the user opened index.html via file:// or the Sheet is still private
 function renderFallbackUploader(errorMsg) {
+  const loader = document.getElementById('pageLoader');
+  if (loader) loader.remove();
+  
   const tbody = document.getElementById("tableBody");
   if (!tbody) return;
 
