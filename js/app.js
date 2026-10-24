@@ -74,6 +74,17 @@ function updateChartThemeColors() {
   const isLight = document.body.classList.contains('light-mode');
   Chart.defaults.color = isLight ? '#64748b' : '#8b98b0';
   Chart.defaults.borderColor = isLight ? 'rgba(226, 232, 240, 0.8)' : 'rgba(35, 45, 66, 0.5)';
+
+  if (charts.radar && charts.radar.options?.scales?.r) {
+    charts.radar.options.scales.r.pointLabels.color = isLight ? '#1e293b' : '#e8edf5';
+    charts.radar.options.scales.r.grid.color = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)';
+    charts.radar.options.scales.r.angleLines.color = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)';
+  }
+
+  if (charts.shotAttempts && charts.shotAttempts.options?.scales?.r) {
+    charts.shotAttempts.options.scales.r.grid.color = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)';
+  }
+
   Object.values(charts).forEach(chart => {
     if (chart) chart.update();
   });
@@ -381,8 +392,9 @@ function updateDashboard() {
   const endDateInput = document.getElementById('endDate');
   if (!startDateInput || !endDateInput) return;
 
+  // Include the entire end day up to 23:59:59.999
   const startDate = new Date(startDateInput.value).getTime();
-  const endDate = new Date(endDateInput.value).getTime();
+  const endDate = new Date(endDateInput.value).getTime() + 86399999;
   const teamFilter = document.getElementById('teamFilter') ? document.getElementById('teamFilter').value : 'all';
 
   const filteredGames = rawGames.filter(g => {
@@ -427,6 +439,14 @@ function updateDashboard() {
     renderBlowoutsChart();
     renderStreaksChart();
     renderHomeAwayChart();
+  } else {
+    // Clear all charts cleanly if no games match the filter criteria
+    Object.keys(charts).forEach(key => {
+      if (charts[key]) {
+        charts[key].destroy();
+        charts[key] = null;
+      }
+    });
   }
 }
 
@@ -500,7 +520,7 @@ function renderKPIs(teams, gameCount) {
   if (kpiTeams) kpiTeams.innerText = `${teams.length} Teams`;
   if (kpiGames) kpiGames.innerText = `${gameCount} Games`;
   if (kpiAvgPpg) kpiAvgPpg.innerText = `${avgPpg.toFixed(1)} PPG`;
-  if (kpiTopTeam) kpiTopTeam.innerText = `${topTeam.name.split(' ')[0]} (${topTeam.ppg.toFixed(1)})`;
+  if (kpiTopTeam) kpiTopTeam.innerText = teams.length > 0 ? `${topTeam.name.split(' ')[0]} (${topTeam.ppg.toFixed(1)})` : "N/A";
 }
 
 function renderTable() {
@@ -531,6 +551,12 @@ function renderTable() {
 
   const tbody = document.getElementById("tableBody");
   if (!tbody) return;
+
+  if (paginatedData.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding: 24px; color: var(--text-muted);">No matching teams or games found for the selected filters.</td></tr>`;
+    renderPaginationControls(1);
+    return;
+  }
 
   tbody.innerHTML = paginatedData.map((t, i) => {
     const netClass = t.netRating >= 0 ? "net-pos" : "net-neg";
@@ -668,8 +694,8 @@ function renderRadarChart() {
   const team1Id = document.getElementById('radarTeam1') ? document.getElementById('radarTeam1').value : null;
   const team2Id = document.getElementById('radarTeam2') ? document.getElementById('radarTeam2').value : null;
   
-  const t1 = processedTeams.find(t => String(t.id) === String(team1Id));
-  const t2 = processedTeams.find(t => String(t.id) === String(team2Id));
+  const t1 = processedTeams.find(t => String(t.id) === String(team1Id)) || processedTeams[0];
+  const t2 = processedTeams.find(t => String(t.id) === String(team2Id)) || processedTeams[1] || processedTeams[0];
   if (!t1 || !t2) return;
 
   const maxPpg = Math.max(...processedTeams.map(t => t.ppg)) || 1;
@@ -688,6 +714,8 @@ function renderRadarChart() {
   const canvas = document.getElementById('radarChart');
   if (!canvas) return;
 
+  const isLight = document.body.classList.contains('light-mode');
+
   charts.radar = new Chart(canvas, {
     type: 'radar',
     data: {
@@ -700,7 +728,16 @@ function renderRadarChart() {
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { boxWidth: 12, usePointStyle: true } } },
-      scales: { r: { angleLines: { color: 'rgba(255,255,255,0.1)' }, grid: { color: 'rgba(255,255,255,0.1)' }, pointLabels: { color: '#e8edf5', font: { size: 11 } }, ticks: { display: false }, min: 0, max: 100 } }
+      scales: { 
+        r: { 
+          angleLines: { color: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)' }, 
+          grid: { color: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)' }, 
+          pointLabels: { color: isLight ? '#1e293b' : '#e8edf5', font: { size: 11 } }, 
+          ticks: { display: false }, 
+          min: 0, 
+          max: 100 
+        } 
+      }
     }
   });
 }
@@ -737,7 +774,7 @@ function renderShotDistChart() {
           callbacks: {
             label: (c) => {
               const total = c.dataset.data.reduce((a, b) => a + b, 0);
-              const pct = ((c.raw / total) * 100).toFixed(1);
+              const pct = total > 0 ? ((c.raw / total) * 100).toFixed(1) : 0;
               return ` ${c.label}: ${c.raw.toLocaleString()} pts (${pct}%)`;
             }
           }
@@ -844,7 +881,7 @@ function renderMarginTrendChart() {
   const teamFilterEl = document.getElementById('teamFilter');
   const targetTeamId = (teamFilterEl && teamFilterEl.value !== 'all') 
     ? teamFilterEl.value 
-    : (processedTeams.length > 0 ? processedTeams[0].id : null);
+    : (processedTeams.length > 0 ? [...processedTeams].sort((a, b) => b.winPct - a.winPct)[0].id : null);
 
   if (!targetTeamId) return;
 
@@ -900,6 +937,8 @@ function renderShotAttemptsChart() {
   const canvas = document.getElementById('shotAttemptsChart');
   if (!canvas) return;
 
+  const isLight = document.body.classList.contains('light-mode');
+
   charts.shotAttempts = new Chart(canvas, {
     type: 'polarArea',
     data: {
@@ -925,7 +964,7 @@ function renderShotAttemptsChart() {
           }
         }
       },
-      scales: { r: { ticks: { display: false }, grid: { color: 'rgba(255,255,255,0.1)' } } }
+      scales: { r: { ticks: { display: false }, grid: { color: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)' } } }
     }
   });
 }
@@ -1032,7 +1071,8 @@ function renderHomeAwayChart() {
   const canvas = document.getElementById('homeAwayChart');
   if (!canvas) return;
 
-  const topTeams = [...processedTeams].sort((a, b) => b.winPct - a.winPct).slice(0, 5);
+  // Slice Top 3 teams to match the HTML badge ("Top 3 Teams PPG comparison")
+  const topTeams = [...processedTeams].sort((a, b) => b.winPct - a.winPct).slice(0, 3);
 
   const getTeamHomeAwayStats = (teamId) => {
     let homePts = 0, homeGames = 0, awayPts = 0, awayGames = 0;
